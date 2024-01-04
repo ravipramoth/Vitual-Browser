@@ -1,0 +1,63 @@
+pipeline {
+    agent any 
+
+    environment {
+        SCANNER_HOME = tool 'sonar-tool'
+    }
+
+    stages {
+        stage ('git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/ravipramoth/Vitual-Browser.git' 
+            }
+        }
+
+        stage ('Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'DP'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+
+        stage ('Sonar Scanner') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
+                    sh "$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=VirtualBrowser -Dsonar.projectName=VirtualBrowser"
+                }
+            }
+        }
+
+        stage ("Docker Build and Tag") {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        dir('/root/.jenkins/workspace/VB/.docker/brave') {
+                            sh "docker build -t promo286/vb:latest ."
+                        }
+                    }
+                }
+            }
+        }
+
+        stage ("Image Scan") {
+            steps {
+                sh "trivy image promo286/vb:latest"
+            }
+        }
+
+        stage ("Image Push") {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh "docker push promo286/vb:latest"
+                    }
+                }
+            }
+        }
+        stage ("Deploy"){
+            steps{
+                sh "docker-compose up -d "
+            }
+        }
+    }
+}
